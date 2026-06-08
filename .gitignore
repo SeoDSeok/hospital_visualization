@@ -1,0 +1,17 @@
+# 비밀 키 — 절대 커밋 금지
+.env
+
+# 데이터 (환자 데이터/대용량 — 깃에 올리지 않음)
+data/
+*.csv
+*.xlsx
+*.xls
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 백업/임시
+*.backup.py
+server.log
