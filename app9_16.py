@@ -2488,7 +2488,7 @@ _LEFT_PANEL_STYLE = {
 }
 _CHAT_PANEL_STYLE = {
     **CARD,
-    "width": "540px", "minWidth": "540px", "maxWidth": "540px",
+    "width": "580px", "minWidth": "580px", "maxWidth": "580px",
     "flexShrink": 0, "height": "calc(100% - 16px)", "minHeight": 0, "boxSizing": "border-box",
     "margin": "12px 12px 12px 12px",
     "display": "flex", "flexDirection": "column", "overflow": "hidden", "padding": "0",
@@ -2816,20 +2816,78 @@ app.layout = html.Div(
                                                 ),
                                             ],
                                         ),
-                                        # Bottom detail/profile panel (toggled via callback)
+                                    ],
+                                ),
+
+                                # ===== 하단 행: 전원환자 프로파일(좌) + 병원/지역 상세 샷(우, 클릭 시) =====
+                                html.Div(
+                                    style={"display": "flex", "gap": "12px",
+                                           "margin": "12px 0 12px 12px", "height": "300px",
+                                           "flexShrink": "0"},
+                                    children=[
+                                        # ----- 전원환자 프로파일 테이블 카드 -----
+                                        html.Div(
+                                            className="npipp-card",
+                                            style={**CARD, "flex": "2 1 0", "minWidth": "0",
+                                                   "padding": "8px 14px", "height": "300px",
+                                                   "overflowY": "auto",
+                                                   "boxSizing": "border-box"},
+                                            children=[
+                                                html.Div(
+                                                    children=[
+                                                        html.Span("전원환자 프로파일",
+                                                                  style={"fontWeight": "600", "fontSize": "13px", "color": COLOR["text_title"]}),
+                                                        html.Span("선택된 지역의 전원환자 주요 특성",
+                                                                  style={"fontSize": "11px", "color": COLOR["text_muted"], "marginLeft": "8px"}),
+                                                    ],
+                                                    style={"marginBottom": "8px", "paddingBottom": "8px",
+                                                           "borderBottom": f"1px solid {COLOR['border']}"},
+                                                ),
+                                                html.Table([
+                                                    html.Thead(html.Tr([
+                                                        html.Th(col, style={
+                                                            "background": COLOR["blue_soft"], "padding": "5px 8px",
+                                                            "textAlign": "left", "fontSize": "11px",
+                                                            "fontWeight": "700", "color": COLOR["primary"],
+                                                            "borderBottom": f"1px solid {COLOR['border']}",
+                                                            "width": w,
+                                                        }) for col, w in zip(
+                                                            ["순위", "성별", "연령대", "사고장소", "손상기전", "전원율"],
+                                                            ["6%", "8%", "10%", "15%", "18%", "12%"],
+                                                        )
+                                                    ])),
+                                                    html.Tbody([
+                                                        html.Tr([
+                                                            html.Td(v, style={"padding": "5px 8px", "fontSize": "13px",
+                                                                              "color": COLOR["text_title"],
+                                                                              "borderBottom": "1px solid #F0F4FF"})
+                                                            for v in row
+                                                        ], style={"background": "#FFFFFF" if i % 2 == 0 else "#F8FAFC"})
+                                                        for i, row in enumerate([
+                                                            ["1", "남", "30대", "도로", "운수사고", "28.9%"],
+                                                            ["2", "남", "60대", "도로", "운수사고", "24.2%"],
+                                                            ["3", "남", "80대이상", "도로", "운수사고", "23.4%"],
+                                                        ])
+                                                    ], id="profile-table-body"),
+                                                ], style={"width": "100%", "borderCollapse": "collapse", "tableLayout": "fixed"}),
+                                            ],
+                                        ),
+
+                                        # ----- 병원/지역 상세 샷 (지도 클릭 시에만 표시, 전체의 60%) -----
                                         html.Div(
                                             id="shot_container",
+                                            className="npipp-card",
                                             style={"display": "none"},
                                             children=[
                                                 html.Div(
                                                     style={"display": "flex", "alignItems": "center", "gap": "8px",
                                                            "position": "sticky", "top": "0px", "zIndex": 1000,
-                                                           "background": CLR["panel"], "padding": "12px 16px",
+                                                           "background": CLR["panel"], "padding": "10px 14px",
                                                            "borderBottom": f"1px solid {CLR['border']}",
-                                                           "borderRadius": "16px 16px 0 0"},
+                                                           "borderRadius": "12px 12px 0 0"},
                                                     children=[
                                                         html.H4(id="shot_title", children="",
-                                                                style={"margin": 0, "fontSize": "15px", "fontWeight": 800,
+                                                                style={"margin": 0, "fontSize": "14px", "fontWeight": 800,
                                                                        "color": CLR["navy"], "flex": "1 1 auto"}),
                                                         html.Button("Sankey 크게 보기", id="open_sankey_btn", n_clicks=0,
                                                                     style={"display": "none",
@@ -2844,57 +2902,9 @@ app.layout = html.Div(
                                                                            "color": CLR["muted"]}),
                                                     ],
                                                 ),
-                                                html.Div(id="shot_body", style={"padding": "12px"}),
+                                                html.Div(id="shot_body", style={"padding": "10px"}),
                                             ],
                                         ),
-                                    ],
-                                ),
-
-                                # ===== 전원환자 프로파일 테이블 카드 (디자인 껍데기, 콜백 미연결) =====
-                                html.Div(
-                                    className="npipp-card",
-                                    style={**CARD, "margin": "12px 0 12px 12px",
-                                           "padding": "8px 14px", "height": "300px",
-                                           "overflowY": "auto", "flexShrink": "0",
-                                           "boxSizing": "border-box"},
-                                    children=[
-                                        html.Div(
-                                            children=[
-                                                html.Span("전원환자 프로파일",
-                                                          style={"fontWeight": "600", "fontSize": "13px", "color": COLOR["text_title"]}),
-                                                html.Span("선택된 지역의 전원환자 주요 특성",
-                                                          style={"fontSize": "11px", "color": COLOR["text_muted"], "marginLeft": "8px"}),
-                                            ],
-                                            style={"marginBottom": "8px", "paddingBottom": "8px",
-                                                   "borderBottom": f"1px solid {COLOR['border']}"},
-                                        ),
-                                        html.Table([
-                                            html.Thead(html.Tr([
-                                                html.Th(col, style={
-                                                    "background": COLOR["blue_soft"], "padding": "5px 8px",
-                                                    "textAlign": "left", "fontSize": "11px",
-                                                    "fontWeight": "700", "color": COLOR["primary"],
-                                                    "borderBottom": f"1px solid {COLOR['border']}",
-                                                    "width": w,
-                                                }) for col, w in zip(
-                                                    ["순위", "성별", "연령대", "사고장소", "손상기전", "전원율"],
-                                                    ["6%", "8%", "10%", "15%", "18%", "12%"],
-                                                )
-                                            ])),
-                                            html.Tbody([
-                                                html.Tr([
-                                                    html.Td(v, style={"padding": "5px 8px", "fontSize": "13px",
-                                                                      "color": COLOR["text_title"],
-                                                                      "borderBottom": "1px solid #F0F4FF"})
-                                                    for v in row
-                                                ], style={"background": "#FFFFFF" if i % 2 == 0 else "#F8FAFC"})
-                                                for i, row in enumerate([
-                                                    ["1", "남", "30대", "도로", "운수사고", "28.9%"],
-                                                    ["2", "남", "60대", "도로", "운수사고", "24.2%"],
-                                                    ["3", "남", "80대이상", "도로", "운수사고", "23.4%"],
-                                                ])
-                                            ], id="profile-table-body"),
-                                        ], style={"width": "100%", "borderCollapse": "collapse", "tableLayout": "fixed"}),
                                     ],
                                 ),
                             ],
@@ -3059,23 +3069,23 @@ def update(
 
 
     # -------------------------------------------------
-    # Bottom detail/profile panel style (hide when nothing selected)
-    # PRD: 중앙 하단 상세 프로파일 영역
+    # 병원/지역 상세 샷 패널 스타일 (선택 시 우측 60% 영역에 표시, 미선택 시 숨김)
+    # PRD: 전원환자 프로파일(좌 40%) + 상세 샷(우 60%) 가로 분할
     # -------------------------------------------------
     if selected:
         shot_style = {
+            **CARD,
             "display": "block",
-            "flex": "0 0 auto",
-            "height": "42%",
-            "maxHeight": "42%",
+            "flex": "3 1 0",
+            "minWidth": "0",
+            "height": "300px",
             "overflowY": "auto",
             "overflowX": "auto",
-            "borderTop": f"1px solid {CLR['border']}",
             "boxSizing": "border-box",
             "background": CLR["panel"],
         }
     else:
-        shot_style = {"display": "none"}
+        shot_style = {"display": "none", "flex": "0 0 0"}
 
     # Toggle Sankey button visibility with selection (button always exists in layout)
     if selected:
