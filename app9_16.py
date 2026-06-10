@@ -1248,7 +1248,8 @@ def make_fig_hospital(df_f, hosp_f, roles_f, scenario, layers, cnt_range, select
     fig.update_layout(
         mapbox=dict(style="carto-positron", center=dict(lat=center_lat, lon=center_lon), zoom=zoom),
         margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(orientation="h"),
+        legend=dict(orientation="h", yanchor="bottom", y=0, xanchor="right", x=1,
+                     bgcolor="rgba(255,255,255,0.7)"),
     )
     return fig
 
@@ -1386,7 +1387,8 @@ def make_fig_region(df_f, region_f, rmet_f, scenario, layers, cnt_range, selecte
     fig.update_layout(
         mapbox=dict(style="carto-positron", center=dict(lat=center_lat, lon=center_lon), zoom=zoom),
         margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(orientation="h"),
+        legend=dict(orientation="h", yanchor="bottom", y=0, xanchor="right", x=1,
+                     bgcolor="rgba(255,255,255,0.7)"),
     )
     return fig
 
@@ -1813,7 +1815,7 @@ def build_sparkline(values, color):
         ))
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
-        height=38,
+        height=44,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(visible=False),
@@ -1902,7 +1904,7 @@ def build_kpi_cards(df_f):
     children = []
     for title, value, sub, color, soft, icon, spark in cards:
         trend = _trend_badge(_trend_pct(spark))
-        title_row = [html.Div(title, style={"fontSize": "12px", "color": COLOR["text_muted"], "fontWeight": 600,
+        title_row = [html.Div(title, style={"fontSize": "11px", "color": COLOR["text_muted"], "fontWeight": 600,
                                              "whiteSpace": "nowrap", "overflow": "hidden", "textOverflow": "ellipsis"})]
         if trend is not None:
             title_row.append(trend)
@@ -1910,26 +1912,35 @@ def build_kpi_cards(df_f):
             className="npipp-card npipp-card-hover",
             style={**CARD, "borderLeft": f"3px solid {color}",
                    "flex": "1 1 0", "minWidth": "0", "flexShrink": "0",
-                   "padding": "10px 16px", "height": "90px", "boxSizing": "border-box",
-                   "display": "flex", "flexDirection": "row", "alignItems": "center", "gap": "14px"},
+                   "padding": "12px 16px", "height": "120px", "boxSizing": "border-box",
+                   "display": "flex", "flexDirection": "column", "justifyContent": "space-between"},
             children=[
-                html.Div(icon, style={
-                    "flex": "0 0 auto", "width": "36px", "height": "36px", "borderRadius": "50%",
-                    "background": soft, "display": "flex", "alignItems": "center", "justifyContent": "center",
-                    "fontSize": "16px",
-                }),
                 html.Div(
-                    style={"flex": "1 1 auto", "minWidth": "0", "display": "flex", "flexDirection": "column"},
+                    style={"display": "flex", "alignItems": "center", "justifyContent": "space-between", "gap": "8px"},
                     children=[
-                        html.Div(title_row, style={"display": "flex", "alignItems": "center"}),
-                        html.Div(value, style={"fontSize": "22px", "fontWeight": 700, "color": COLOR["text_title"],
-                                               "lineHeight": "1.15", "marginTop": "2px"}),
-                        html.Div(sub, style={"fontSize": "11px", "color": COLOR["text_muted"], "marginTop": "2px"}),
+                        html.Div(title_row, style={"display": "flex", "alignItems": "center", "minWidth": "0", "flex": "1 1 auto"}),
+                        html.Div(icon, style={
+                            "flex": "0 0 auto", "width": "24px", "height": "24px", "borderRadius": "50%",
+                            "background": soft, "display": "flex", "alignItems": "center", "justifyContent": "center",
+                            "fontSize": "12px",
+                        }),
                     ],
                 ),
-                dcc.Graph(figure=build_sparkline(spark, color),
-                          config={"displayModeBar": False, "staticPlot": True},
-                          style={"width": "80px", "height": "36px", "flex": "0 0 auto"}),
+                html.Div(
+                    style={"display": "flex", "alignItems": "flex-end", "justifyContent": "space-between", "gap": "10px"},
+                    children=[
+                        html.Div([
+                            html.Div(value, style={"fontSize": "26px", "fontWeight": 700, "color": COLOR["text_title"],
+                                                   "lineHeight": "1.15"}),
+                            html.Div(sub, style={"fontSize": "11px", "color": COLOR["text_muted"],
+                                                  "whiteSpace": "nowrap", "overflow": "hidden", "textOverflow": "ellipsis",
+                                                  "marginTop": "2px"}),
+                        ], style={"flex": "0 0 auto", "minWidth": "0"}),
+                        dcc.Graph(figure=build_sparkline(spark, color),
+                                  config={"displayModeBar": False, "staticPlot": True},
+                                  style={"flex": "1 1 auto", "minWidth": "0", "height": "44px"}),
+                    ],
+                ),
             ],
         ))
 
@@ -2316,8 +2327,9 @@ def render_chat(history):
             style={
                 "maxWidth": "100%", "padding": "8px 10px", "borderRadius": "8px",
                 "fontSize": "12px", "lineHeight": "1.6", "whiteSpace": "pre-line",
+                "marginBottom": "6px",
                 "background": COLOR["blue_soft"] if is_user else COLOR["pink_soft"],
-                "color": COLOR["text_title"],
+                "color": COLOR["text_title"] if is_user else "#9C2752",
             },
         )]
 
@@ -2385,7 +2397,7 @@ app.index_string = """<!DOCTYPE html>
 {%metas%}<title>{%title%}</title>{%favicon%}{%css%}
 <style>
   * { font-family: 'Pretendard','Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
-  body { margin:0; background:#F0F4FF !important; }
+  body { margin:0; background:#F0F4FF !important; font-size:13px !important; }
   ::-webkit-scrollbar { width:8px; height:8px; }
   ::-webkit-scrollbar-thumb { background:#CBD5E1; border-radius:4px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -2425,6 +2437,9 @@ app.index_string = """<!DOCTYPE html>
   .npipp-send-btn { transition: background .15s ease, transform .1s ease; }
   .npipp-send-btn:hover { background:#4A7BDB !important; }
   .npipp-send-btn:active { transform: scale(0.97); }
+  .quick-btn:hover {
+    background:#5B8DEF !important; color:white !important; transition: all 0.15s;
+  }
 </style>
 </head>
 <body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
@@ -2466,24 +2481,28 @@ hospital_options0 = make_hospital_options(hosp0)
 
 _LEFT_PANEL_STYLE = {
     **CARD,
-    "width": "220px", "minWidth": "220px", "flexShrink": "0",
+    "width": "390px", "minWidth": "390px", "flexShrink": "0",
     "height": "calc(100% - 16px)", "overflowY": "auto",
-    "margin": "8px 0 8px 8px",
+    "margin": "12px 0 12px 12px",
     "padding": "16px 14px", "boxSizing": "border-box",
 }
 _CHAT_PANEL_STYLE = {
     **CARD,
-    "width": "300px", "minWidth": "300px", "maxWidth": "300px",
+    "width": "540px", "minWidth": "540px", "maxWidth": "540px",
     "flexShrink": 0, "height": "calc(100% - 16px)", "minHeight": 0, "boxSizing": "border-box",
-    "margin": "8px 8px 8px 8px",
+    "margin": "12px 12px 12px 12px",
     "display": "flex", "flexDirection": "column", "overflow": "hidden", "padding": "0",
 }
 _SECTION_LABEL = {"borderLeft": "3px solid #5B8DEF", "paddingLeft": "8px",
                   "color": "#334155", "fontWeight": 700, "fontSize": "11px",
-                  "marginTop": "0px", "marginBottom": "0px",
+                  "marginTop": "0px", "marginBottom": "8px",
                   "textTransform": "uppercase", "letterSpacing": "0.05em"}
 _SECTION_WRAP_STYLE = {"background": "#EEF2FF", "borderRadius": "6px",
-                       "padding": "6px 8px", "marginBottom": "8px"}
+                       "padding": "6px 8px", "marginBottom": "10px"}
+_DROPDOWN_STYLE = {"fontSize": "13px"}
+_SLIDER_WRAP_STYLE = {"margin": "6px 0"}
+_CHECK_LABEL_STYLE = {"display": "inline-block", "marginRight": "12px",
+                      "fontSize": "13px", "color": "#475569"}
 _PANEL_TITLE_STYLE = {"marginTop": "0px", "marginBottom": "14px", "fontSize": "12px",
                       "fontWeight": 600, "color": "#5B8DEF", "padding": "4px 10px",
                       "background": "#EEF2FF", "border": "1px solid #C5D8FF",
@@ -2592,7 +2611,7 @@ app.layout = html.Div(
                                     {"label": "Perspective E (전원 환자만 분석)", "value": "E"},
                                 ],
                                 value="A", clearable=False,
-                                style={"fontSize": "12px"}, optionHeight=32,
+                                style={"fontSize": "13px", "height": "34px"}, optionHeight=32,
                             ),
                         ]),
 
@@ -2606,7 +2625,7 @@ app.layout = html.Div(
                                     {"label": " 시군구 단계구분도", "value": "choro"},
                                 ],
                                 value=["hosp"],
-                                labelStyle={"display": "inline-block", "marginRight": "12px"},
+                                labelStyle=_CHECK_LABEL_STYLE,
                             ),
                         ]),
 
@@ -2621,7 +2640,7 @@ app.layout = html.Div(
                                     {"label": "고령자손상률(65+)", "value": "elderly_rate"},
                                 ],
                                 value="injury_cnt", clearable=False,
-                                style={"fontSize": "12px"}, optionHeight=32,
+                                style={"fontSize": "13px", "height": "34px"}, optionHeight=32,
                             ),
                         ]),
 
@@ -2631,7 +2650,7 @@ app.layout = html.Div(
                                 id="cnt_range", min=1, max=max_cnt, step=1, value=cnt_range_default,
                                 marks={1: "1", 10: "10", 30: "30", 50: "50", max_cnt: str(max_cnt)},
                                 updatemode="mouseup",
-                            ), style={"padding": "4px 0"}),
+                            ), style={"margin": "6px 0"}),
                         ]),
 
                         html.H4("Filters", style=_PANEL_TITLE_STYLE),
@@ -2641,7 +2660,7 @@ app.layout = html.Div(
                             dcc.Dropdown(id="filter_hosp_region",
                                          options=[{"label": x, "value": x} for x in region_hosp_opts],
                                          value=[], multi=True, placeholder="예: 서울, 경기, ...",
-                                         style={"fontSize": "12px"}, optionHeight=32),
+                                         style={"fontSize": "13px", "height": "34px"}, optionHeight=32),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
@@ -2649,7 +2668,7 @@ app.layout = html.Div(
                             dcc.Dropdown(id="filter_addr_region",
                                          options=[{"label": x, "value": x} for x in region_addr_opts],
                                          value=[], multi=True, placeholder="예: 서울특별시, 경상북도, ...",
-                                         style={"fontSize": "12px"}, optionHeight=32),
+                                         style={"fontSize": "13px", "height": "34px"}, optionHeight=32),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
@@ -2657,7 +2676,7 @@ app.layout = html.Div(
                             dcc.Dropdown(id="filter_classes",
                                          options=[{"label": x, "value": x} for x in classes_opts],
                                          value=[], multi=True, placeholder="예: 다수사상, 중증손상, ...",
-                                         style={"fontSize": "12px"}, optionHeight=32),
+                                         style={"fontSize": "13px", "height": "34px"}, optionHeight=32),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
@@ -2665,7 +2684,7 @@ app.layout = html.Div(
                             dcc.Dropdown(id="filter_icd_detail",
                                          options=[{"label": x, "value": x} for x in icd_detail_opts],
                                          value=[], multi=True, placeholder="예: 머리 손상(S00–S09) ...",
-                                         style={"fontSize": "12px"}, optionHeight=32),
+                                         style={"fontSize": "13px", "height": "34px"}, optionHeight=32),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
@@ -2673,24 +2692,25 @@ app.layout = html.Div(
                             dcc.Dropdown(id="filter_sex",
                                          options=[{"label": x, "value": x} for x in sex_opts],
                                          value=[], multi=True, placeholder="예: 1: M, 2 : F",
-                                         style={"fontSize": "12px"}, optionHeight=32),
+                                         style={"fontSize": "13px", "height": "34px"}, optionHeight=32),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
                             html.Div("연령 범위", style=_SECTION_LABEL),
                             html.Div(dcc.RangeSlider(id="filter_age", min=0, max=100, step=1, value=[0, 100],
                                             marks={0: "0", 20: "20", 40: "40", 60: "60", 80: "80", 100: "100"}),
-                                     style={"padding": "4px 0"}),
+                                     style={"margin": "6px 0"}),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
                             html.Div("ISS 범위", style=_SECTION_LABEL),
                             html.Div(dcc.RangeSlider(id="filter_iss", min=0, max=75, step=1, value=[0, 75],
                                             marks={0: "0", 15: "15", 25: "25", 40: "40", 75: "75"}),
-                                     style={"padding": "4px 0"}),
+                                     style={"margin": "6px 0"}),
                             dcc.Checklist(id="filter_iss_na",
                                           options=[{"label": " ISS 결측 포함", "value": "include"}],
-                                          value=["include"], style={"marginTop": "6px"}),
+                                          value=["include"], style={"marginTop": "6px"},
+                                          labelStyle=_CHECK_LABEL_STYLE),
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
@@ -2698,7 +2718,7 @@ app.layout = html.Div(
                             dcc.Dropdown(id="entity", options=hospital_options0,
                                          placeholder="예: 경북대병원 (또는 Scenario D에서 지역 선택)",
                                          value=None, clearable=True,
-                                         style={"fontSize": "12px"}, optionHeight=32),
+                                         style={"fontSize": "13px", "height": "34px"}, optionHeight=32),
                             html.Div(
                                 style={"marginTop": "8px", "fontSize": "12px", "color": CLR["muted"]},
                                 children="Tip: 지도에서 마커를 클릭해도 선택과 동일하게 상세 프로파일이 갱신됩니다.",
@@ -2737,11 +2757,13 @@ app.layout = html.Div(
                             children=[
                                 # KPI cards row
                                 html.Div(
-                                    style={"display": "flex", "gap": "8px",
-                                           "padding": "8px 8px 0 8px", "flexShrink": "0"},
+                                    style={"display": "flex", "gap": "12px", "height": "120px",
+                                           "padding": "12px 12px 0 12px", "flexShrink": "0"},
                                     children=[
-                                        dcc.Loading(html.Div(id="kpi_cards", style={"display": "flex", "gap": "8px", "width": "100%"}),
-                                                     type="circle", color=COLOR["primary"]),
+                                        dcc.Loading(html.Div(id="kpi_cards", style={"display": "flex", "gap": "12px", "width": "100%"}),
+                                                     type="circle", color=COLOR["primary"],
+                                                     style={"width": "100%"},
+                                                     parent_style={"width": "100%", "display": "flex"}),
                                     ],
                                 ),
 
@@ -2749,7 +2771,7 @@ app.layout = html.Div(
                                 html.Div(
                                     className="npipp-card",
                                     style={**CARD, "flex": "1", "minHeight": "0",
-                                           "margin": "8px 0 0 8px",
+                                           "margin": "12px 0 0 12px",
                                            "padding": "0", "overflow": "hidden",
                                            "position": "relative",
                                            "display": "flex", "flexDirection": "column"},
@@ -2761,9 +2783,9 @@ app.layout = html.Div(
                                                 # 단계구분도 카드형 범례 (시각 표시 전용 — 지표 계산/필터 로직과 무관)
                                                 html.Div(
                                                     style={
-                                                        "position": "absolute", "bottom": "16px", "left": "16px",
+                                                        "position": "absolute", "bottom": "12px", "left": "12px",
                                                         "background": "rgba(255,255,255,0.95)",
-                                                        "borderRadius": "8px", "padding": "10px 12px",
+                                                        "borderRadius": "8px", "padding": "8px 10px",
                                                         "boxShadow": "0 2px 8px rgba(91,141,239,0.15)",
                                                         "zIndex": 1000,
                                                         "fontSize": "11px", "color": COLOR["text_title"],
@@ -2774,11 +2796,12 @@ app.layout = html.Div(
                                                                                           "color": "#334155", "fontSize": "11px"}),
                                                         *[
                                                             html.Div(
-                                                                style={"display": "flex", "alignItems": "center", "marginBottom": "3px"},
+                                                                style={"display": "flex", "alignItems": "center", "gap": "6px", "marginBottom": "3px"},
                                                                 children=[
                                                                     html.Div(style={"width": "10px", "height": "10px", "borderRadius": "2px",
-                                                                                      "background": c, "marginRight": "6px", "flexShrink": "0"}),
-                                                                    html.Span(lab, style={"fontSize": "11px", "color": "#475569"}),
+                                                                                      "background": c, "flexShrink": "0",
+                                                                                      **({"border": "1px solid #E2E8F0"} if c == "#EEF6FC" else {})}),
+                                                                    html.Span(lab, style={"fontSize": "11px", "color": "#64748B"}),
                                                                 ],
                                                             )
                                                             for c, lab in [
@@ -2830,8 +2853,10 @@ app.layout = html.Div(
                                 # ===== 전원환자 프로파일 테이블 카드 (디자인 껍데기, 콜백 미연결) =====
                                 html.Div(
                                     className="npipp-card",
-                                    style={**CARD, "margin": "8px 0 8px 8px",
-                                           "padding": "12px 16px", "flexShrink": "0"},
+                                    style={**CARD, "margin": "12px 0 12px 12px",
+                                           "padding": "8px 14px", "height": "300px",
+                                           "overflowY": "auto", "flexShrink": "0",
+                                           "boxSizing": "border-box"},
                                     children=[
                                         html.Div(
                                             children=[
@@ -2846,15 +2871,19 @@ app.layout = html.Div(
                                         html.Table([
                                             html.Thead(html.Tr([
                                                 html.Th(col, style={
-                                                    "background": COLOR["blue_soft"], "padding": "5px 10px",
+                                                    "background": COLOR["blue_soft"], "padding": "5px 8px",
                                                     "textAlign": "left", "fontSize": "11px",
                                                     "fontWeight": "700", "color": COLOR["primary"],
                                                     "borderBottom": f"1px solid {COLOR['border']}",
-                                                }) for col in ["순위", "성별", "연령대", "사고장소", "손상기전", "전원율"]
+                                                    "width": w,
+                                                }) for col, w in zip(
+                                                    ["순위", "성별", "연령대", "사고장소", "손상기전", "전원율"],
+                                                    ["6%", "8%", "10%", "15%", "18%", "12%"],
+                                                )
                                             ])),
                                             html.Tbody([
                                                 html.Tr([
-                                                    html.Td(v, style={"padding": "5px 10px", "fontSize": "12px",
+                                                    html.Td(v, style={"padding": "5px 8px", "fontSize": "13px",
                                                                       "color": COLOR["text_title"],
                                                                       "borderBottom": "1px solid #F0F4FF"})
                                                     for v in row
@@ -2865,7 +2894,7 @@ app.layout = html.Div(
                                                     ["3", "남", "80대이상", "도로", "운수사고", "23.4%"],
                                                 ])
                                             ], id="profile-table-body"),
-                                        ], style={"width": "100%", "borderCollapse": "collapse"}),
+                                        ], style={"width": "100%", "borderCollapse": "collapse", "tableLayout": "fixed"}),
                                     ],
                                 ),
                             ],
@@ -2880,6 +2909,7 @@ app.layout = html.Div(
                                     style={"padding": "10px 14px", "background": COLOR["blue_soft"],
                                            "color": COLOR["primary"], "fontWeight": 700, "fontSize": "13px",
                                            "display": "flex", "alignItems": "center", "gap": "10px",
+                                           "flexShrink": "0",
                                            "borderRadius": "12px 12px 0 0"},
                                     children=[
                                         html.Div("💬", style={
@@ -2897,7 +2927,7 @@ app.layout = html.Div(
                                 # 스크롤 영역 (flex 자식이 직접 overflow 담당 -> 길어지면 스크롤)
                                 html.Div(
                                     style={"flex": "1 1 auto", "minHeight": 0, "overflowY": "auto",
-                                           "padding": "14px"},
+                                           "padding": "8px 10px"},
                                     children=[
                                         dcc.Loading(
                                             html.Div(id="chat_window", children=render_chat([])),
@@ -2906,21 +2936,26 @@ app.layout = html.Div(
                                     ],
                                 ),
                                 html.Div(
-                                    style={"padding": "8px 14px", "display": "flex", "flexWrap": "wrap", "gap": "6px",
-                                           "borderTop": f"1px solid {COLOR['border']}", "background": CLR["panel"]},
+                                    style={"padding": "6px 10px", "display": "flex", "flexWrap": "wrap", "gap": "4px",
+                                           "borderTop": f"1px solid {COLOR['border']}"},
                                     children=[html.Button(c, id={"type": "chip", "index": i}, n_clicks=0,
-                                                          className="npipp-chip")
+                                                          className="quick-btn",
+                                                          style={"background": COLOR["blue_soft"], "color": COLOR["primary"],
+                                                                 "border": f"1px solid {COLOR['blue_pale']}",
+                                                                 "borderRadius": "12px", "padding": "4px 10px",
+                                                                 "fontSize": "11px", "margin": "2px",
+                                                                 "cursor": "pointer"})
                                               for i, c in enumerate(_SUGGEST_CHIPS)],
                                 ),
                                 html.Div(
-                                    style={"borderTop": f"1px solid {COLOR['border']}",
-                                           "padding": "8px 12px", "display": "flex", "gap": "8px"},
+                                    style={"borderTop": f"1px solid {COLOR['border']}", "flexShrink": "0",
+                                           "padding": "8px 10px", "display": "flex", "gap": "8px"},
                                     children=[
                                         dcc.Input(id="chat_input", type="text", value="", n_submit=0,
                                                   placeholder="메시지를 입력하세요...",
-                                                  style={"flex": "1 1 auto", "padding": "8px 14px",
+                                                  style={"flex": "1 1 auto", "padding": "6px 12px",
                                                          "borderRadius": "20px", "border": f"1px solid {COLOR['blue_pale']}",
-                                                         "fontSize": "12px", "outline": "none", "background": "#fff"}),
+                                                         "fontSize": "13px", "outline": "none", "background": "#fff"}),
                                         html.Button("전송 ➤", id="chat_send", n_clicks=0, className="npipp-send-btn",
                                                     style={"background": COLOR["primary"], "color": "white",
                                                            "border": "none", "borderRadius": "16px",
