@@ -991,7 +991,7 @@ def make_fig_hospital(df_f, hosp_f, roles_f, scenario, layers, cnt_range, select
     fig = go.Figure()
     _add_mapbox_dummy(fig, center_lat, center_lon)
 
-    # 시군구 단계구분도 (맨 아래 레이어; 마커/엣지는 위에 렌더)
+    # 시군구 손상 분포도 (맨 아래 레이어; 마커/엣지는 위에 렌더)
     if "choro" in (layers or []):
         add_choropleth(fig, df_f, choro_metric)
 
@@ -1268,7 +1268,7 @@ def make_fig_region(df_f, region_f, rmet_f, scenario, layers, cnt_range, selecte
     fig = go.Figure()
     _add_mapbox_dummy(fig, center_lat, center_lon)
 
-    # 시군구 단계구분도 (맨 아래 레이어)
+    # 시군구 손상 분포도 (맨 아래 레이어)
     if "choro" in (layers or []):
         add_choropleth(fig, df_f, choro_metric)
 
@@ -1654,7 +1654,7 @@ TABLE_KWARGS = dict(
 
 
 # =========================================================
-# 시군구 단계구분도 (PRD 필수기능 2: Web-GIS Choropleth)
+# 시군구 손상 분포도 (PRD 필수기능 2: Web-GIS Choropleth)
 # =========================================================
 SIDO_SHORT = {
     "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구", "인천광역시": "인천",
@@ -1695,7 +1695,7 @@ CHORO_METRICS = {
     "elderly_rate": ("고령자손상률(65+)", "YlOrBr", "%"),
 }
 
-# 단계구분도 표시용 구간(bin) 색상 — 5단계, 진할수록 높은 값
+# 손상 분포도 표시용 구간(bin) 색상 — 5단계, 진할수록 높은 값
 # (sigungu_metrics()의 계산 결과는 그대로 두고, 시각적 색상 매핑에만 사용)
 CHORO_BIN_COLORS = ["#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026"]
 
@@ -1750,7 +1750,7 @@ def sigungu_metrics(df_f):
 
 
 def add_choropleth(fig, df_f, metric="injury_cnt"):
-    """지도 figure에 시군구 단계구분도 레이어 추가 (맨 아래 레이어).
+    """지도 figure에 시군구 손상 분포도 레이어 추가 (맨 아래 레이어).
 
     sigungu_metrics()의 계산 결과(z 원본값)는 그대로 사용하며,
     화면에 칠해지는 색상만 5단계 구간(bin)으로 이산화한다 (시각 표현 전용).
@@ -1786,6 +1786,51 @@ def add_choropleth(fig, df_f, metric="injury_cnt"):
         name=f"시군구 {label}",
         showscale=False,
     ))
+
+
+def _choro_legend_items(df_f, metric):
+    """현재 지표/데이터 기준 (색, 구간라벨) 5쌍을 '높은 값→낮은 값' 순으로 반환.
+
+    지도(add_choropleth)의 구간(bin) 경계와 동일한 기준을 사용해 범례 숫자가
+    실제 칠해지는 색 구간과 일치하도록 한다.
+      - injury_cnt: 데이터 분포 기반 5분위(20/40/60/80%) 경계 → 실제 환자수 범위
+      - 비율(%) 지표: 고정 경계(CHORO_PCT_EDGES) → CHORO_PCT_LABELS
+    """
+    if metric == "injury_cnt":
+        m = sigungu_metrics(df_f)
+        z = m["injury_cnt"].astype(float) if len(m) else pd.Series(dtype=float)
+        if len(z) and float(np.nanmax(z)) > 0:
+            e = [int(round(x)) for x in np.nanpercentile(z, [20, 40, 60, 80])]
+        else:
+            e = [1, 2, 3, 4]
+        labels = [f"{e[0]} 미만", f"{e[0]}~{e[1]}", f"{e[1]}~{e[2]}",
+                  f"{e[2]}~{e[3]}", f"{e[3]} 이상"]
+    else:
+        labels = CHORO_PCT_LABELS
+    pairs = list(zip(CHORO_BIN_COLORS, labels))   # 낮은 값 → 높은 값
+    return list(reversed(pairs))                  # 진한 색(높은 값)이 위로
+
+
+def build_choro_legend_children(df_f, metric):
+    """손상 분포도 범례 카드의 children(제목 + 지표명 + 색 구간 5줄) 생성."""
+    label, _scale, unit = CHORO_METRICS.get(metric, CHORO_METRICS["injury_cnt"])
+    return [
+        html.Div("시군구 손상 분포도", style={"fontWeight": 600, "marginBottom": "2px",
+                                          "color": "#334155", "fontSize": "11px"}),
+        html.Div(f"{label} ({unit})", style={"color": "#94A3B8", "fontSize": "10px",
+                                             "marginBottom": "6px"}),
+        *[
+            html.Div(
+                style={"display": "flex", "alignItems": "center", "gap": "6px", "marginBottom": "3px"},
+                children=[
+                    html.Div(style={"width": "10px", "height": "10px", "borderRadius": "2px",
+                                    "background": c, "flexShrink": "0"}),
+                    html.Span(lab, style={"fontSize": "11px", "color": "#64748B"}),
+                ],
+            )
+            for c, lab in _choro_legend_items(df_f, metric)
+        ],
+    ]
 
 
 # =========================================================
@@ -1980,7 +2025,7 @@ AI_TOOLS = [{
                                        "description": "전원율/전원 흐름을 강조할 때 true (시나리오 E + 전원 연결선 표시)"},
                 "show_edges": {"type": "boolean", "description": "전원 연결선 레이어 표시 여부"},
                 "show_choropleth": {"type": "boolean",
-                                    "description": "시군구 단계구분도(손상률 색상 채우기) 표시 여부"},
+                                    "description": "시군구 손상 분포도(손상 지표 색상 채우기) 표시 여부"},
                 "reset": {"type": "boolean", "description": "모든 필터 초기화 여부"},
             },
         },
@@ -2099,7 +2144,7 @@ def _describe_updates(u: dict) -> str:
         if "edges" in lyr:
             lbl.append("전원 연결선")
         if "choro" in lyr:
-            lbl.append("시군구 단계구분도")
+            lbl.append("시군구 손상 분포도")
         parts.append("레이어=" + (", ".join(lbl) if lbl else "마커만"))
     if u.get("filter_hosp_region"):
         parts.append(f"권역={', '.join(map(str, u['filter_hosp_region']))}")
@@ -2517,6 +2562,19 @@ _SUGGEST_CHIPS = [
     "필터 초기화",
 ]
 
+# 손상 분포도 범례 카드 스타일 (시군구 손상 분포도 레이어 켰을 때만 표시)
+# display/children은 메인 update 콜백이 레이어 체크박스·선택 지표에 따라 제어한다.
+_CHORO_LEGEND_STYLE = {
+    "position": "absolute", "bottom": "12px", "left": "12px",
+    "background": "rgba(255,255,255,0.95)",
+    "borderRadius": "8px", "padding": "8px 10px",
+    "boxShadow": "0 2px 8px rgba(91,141,239,0.15)",
+    "zIndex": 1000,
+    "fontSize": "11px", "color": COLOR["text_title"],
+    "pointerEvents": "none",
+    "display": "none",
+}
+
 app.layout = html.Div(
     style={"display": "flex", "flexDirection": "column", "height": "100vh", "width": "100vw",
            "overflow": "hidden", "background": COLOR["page_bg"]},
@@ -2622,7 +2680,7 @@ app.layout = html.Div(
                                 options=[
                                     {"label": " 마커(병원/지역)", "value": "hosp"},
                                     {"label": " 전원 연결선", "value": "edges"},
-                                    {"label": " 시군구 단계구분도", "value": "choro"},
+                                    {"label": " 시군구 손상 분포도", "value": "choro"},
                                 ],
                                 value=["hosp"],
                                 labelStyle=_CHECK_LABEL_STYLE,
@@ -2630,7 +2688,7 @@ app.layout = html.Div(
                         ]),
 
                         html.Div(style=_SECTION_WRAP_STYLE, children=[
-                            html.Div("단계구분도 지표", style=_SECTION_LABEL),
+                            html.Div("손상 분포도 지표", style=_SECTION_LABEL),
                             dcc.Dropdown(
                                 id="choro_metric",
                                 options=[
@@ -2780,39 +2838,12 @@ app.layout = html.Div(
                                             style={"flex": "1 1 auto", "minHeight": 0, "position": "relative"},
                                             children=[
                                                 dcc.Graph(id="map", style={"height": "100%"}),
-                                                # 단계구분도 카드형 범례 (시각 표시 전용 — 지표 계산/필터 로직과 무관)
+                                                # 손상 분포도 카드형 범례 (시각 표시 전용 — 지표 계산/필터 로직과 무관)
+                                                # 레이어 체크박스에 'choro' 포함 시에만 표시 (메인 update 콜백이 제어)
                                                 html.Div(
-                                                    style={
-                                                        "position": "absolute", "bottom": "12px", "left": "12px",
-                                                        "background": "rgba(255,255,255,0.95)",
-                                                        "borderRadius": "8px", "padding": "8px 10px",
-                                                        "boxShadow": "0 2px 8px rgba(91,141,239,0.15)",
-                                                        "zIndex": 1000,
-                                                        "fontSize": "11px", "color": COLOR["text_title"],
-                                                        "pointerEvents": "none",
-                                                    },
-                                                    children=[
-                                                        html.Div("시군구 단계구분도", style={"fontWeight": 600, "marginBottom": "6px",
-                                                                                          "color": "#334155", "fontSize": "11px"}),
-                                                        *[
-                                                            html.Div(
-                                                                style={"display": "flex", "alignItems": "center", "gap": "6px", "marginBottom": "3px"},
-                                                                children=[
-                                                                    html.Div(style={"width": "10px", "height": "10px", "borderRadius": "2px",
-                                                                                      "background": c, "flexShrink": "0",
-                                                                                      **({"border": "1px solid #E2E8F0"} if c == "#EEF6FC" else {})}),
-                                                                    html.Span(lab, style={"fontSize": "11px", "color": "#64748B"}),
-                                                                ],
-                                                            )
-                                                            for c, lab in [
-                                                                ("#4A90D9", "30이상"),
-                                                                ("#74B3E8", "20~30"),
-                                                                ("#A8D1F0", "15~20"),
-                                                                ("#D4E9F7", "10~15"),
-                                                                ("#EEF6FC", "10미만"),
-                                                            ]
-                                                        ],
-                                                    ],
+                                                    id="choro_legend",
+                                                    style=_CHORO_LEGEND_STYLE,
+                                                    children=build_choro_legend_children(df.iloc[0:0], "injury_cnt"),
                                                 ),
                                             ],
                                         ),
@@ -3016,6 +3047,8 @@ SHOT_STYLE_VISIBLE = {**SHOT_STYLE_BASE, "display": "block"}
     Output("entity", "options"),
     Output("selected_store", "data"),
     Output("kpi_cards", "children"),
+    Output("choro_legend", "style"),
+    Output("choro_legend", "children"),
     Input("scenario", "value"),
     Input("layers", "value"),
     Input("cnt_range", "value"),
@@ -3663,7 +3696,13 @@ def update(
         except Exception:
             pass
 
-    return fig, kpi_panel, rank_children, selected, shot_title, shot_body, open_btn_style, shot_style, entity_options, selected, kpi_cards
+    # 손상 분포도 범례: choro 레이어 켰을 때만 표시하고, 선택 지표/데이터에 맞춰 라벨 갱신
+    show_choro = bool(layers) and "choro" in layers
+    choro_legend_style = {**_CHORO_LEGEND_STYLE, "display": "block" if show_choro else "none"}
+    choro_legend_children = build_choro_legend_children(df_f, choro_metric)
+
+    return (fig, kpi_panel, rank_children, selected, shot_title, shot_body, open_btn_style,
+            shot_style, entity_options, selected, kpi_cards, choro_legend_style, choro_legend_children)
 
 
 
