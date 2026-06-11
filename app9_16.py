@@ -38,9 +38,10 @@ _load_dotenv()
 
 # 데이터 경로 자동 탐색 (루트 또는 data/ 하위 모두 지원)
 _DATA_CANDIDATES = [
-    "merged_data_v10.csv",
-    os.path.join("data", "merged_data_v10.csv"),
+    "merged_data_v12.csv",
+    os.path.join("data", "merged_data_v12.csv"),
     os.path.join("data", "merged_data_v11.csv"),
+    os.path.join("data", "merged_data_v10.csv"),
 ]
 DATA_PATH = next((p for p in _DATA_CANDIDATES if os.path.exists(p)), _DATA_CANDIDATES[0])
 
@@ -1837,13 +1838,14 @@ def build_choro_legend_children(df_f, metric):
 # KPI cards + sparklines (PRD 필수기능 5)
 # =========================================================
 def _monthly_series(df_f, mask=None):
-    """ER_D(YYYYMMDD) 기준 월별 고유 환자수 시계열(최근 12개월)."""
-    if "ER_D" not in df_f.columns or "EMS_SN" not in df_f.columns or len(df_f) == 0:
+    """F_CALL_D(YYYYMMDD, 119 신고일자) 기준 월별 고유 환자수 시계열(최근 12개월).
+    ER_D는 결측 482건이 있어 F_CALL_D(결측 0)로 대체. (2023년 기준 데이터)"""
+    if "F_CALL_D" not in df_f.columns or "EMS_SN" not in df_f.columns or len(df_f) == 0:
         return []
     d = df_f if mask is None else df_f[mask]
     if len(d) == 0:
         return []
-    ym = pd.to_numeric(d["ER_D"], errors="coerce")
+    ym = pd.to_numeric(d["F_CALL_D"], errors="coerce")
     ym = (ym // 100).dropna().astype("int64")  # YYYYMM
     tmp = pd.DataFrame({"ym": ym.values, "sn": d.loc[ym.index, "EMS_SN"].values})
     g = tmp.groupby("ym")["sn"].nunique().sort_index()
@@ -2035,9 +2037,9 @@ AI_TOOLS = [{
     "function": {
         "name": "query_data",
         "description": (
-            "데이터에서 지역(권역/시도)별 손상·전원 통계를 실제로 계산해 표 또는 그래프로 보여준다. "
-            "지역 비교(예: '강원과 제주 전원율 비교'), 순위(예: '전원율 높은 지역 Top 5'), "
-            "특정 지표 조회 질문에 사용한다."
+            "데이터에서 지역(권역/시도)별 또는 월별 손상·전원 통계를 실제로 계산해 표/그래프로 보여준다. "
+            "지역 비교(예: '강원과 제주 전원율 비교'), 순위(예: '5대 광역시 전원율 순위'), "
+            "월별 추세(예: '서울지역 월별 전원율'), 특정 지표 조회 질문에 사용한다."
         ),
         "parameters": {
             "type": "object",
@@ -2048,14 +2050,24 @@ AI_TOOLS = [{
                 },
                 "groups": {
                     "type": "array", "items": {"type": "string"},
-                    "description": "비교할 지역명 목록(예: ['강원','제주']). 비우면 전체에서 상위 top_n",
+                    "description": (
+                        "지역명 목록(예: ['강원','제주']). 묶음 표현도 그대로 전달 가능: "
+                        "'5대광역시','6대광역시','광역시','수도권'. "
+                        "time='monthly'일 때는 이 지역들로 범위를 한정해 월별 집계한다(예: ['서울']). "
+                        "비우면 전체에서 상위 top_n."
+                    ),
+                },
+                "time": {
+                    "type": "string", "enum": ["none", "monthly"],
+                    "description": "none=지역별 집계(기본), monthly=월별 추세 집계. '월별/추이/추세' 질문이면 monthly.",
                 },
                 "metric": {
                     "type": "string",
                     "enum": ["transfer_rate", "injury_count", "severe_rate", "elderly_rate", "avg_transfer_min"],
                     "description": "transfer_rate=전원율, injury_count=손상 환자수, severe_rate=중증손상률, elderly_rate=고령자손상률, avg_transfer_min=평균 전원시간(분)",
                 },
-                "chart": {"type": "string", "enum": ["bar", "table"], "description": "bar=막대그래프, table=표. 기본 bar"},
+                "chart": {"type": "string", "enum": ["bar", "line", "table"],
+                          "description": "bar=막대, line=선(월별 추세에 적합), table=표. 기본: 월별이면 line, 그 외 bar"},
                 "top_n": {"type": "integer", "description": "groups 미지정 시 상위 개수. 기본 10"},
             },
             "required": ["metric"],
@@ -2070,8 +2082,12 @@ def _ai_system_prompt(state_summary: str) -> str:
         "사용자는 보건정책 담당자, 응급의료 관제 담당자, 일반 시민입니다.\n"
         "역할: (1) 제공된 통계 요약을 근거로 한국어로 간결하고 실무적인 인사이트를 제시한다. "
         "(2) 사용자가 화면/필터 변경을 요청하면 set_dashboard_filters 함수를 호출한다. "
-        "(3) 지역별 수치 비교·순위·통계 질문(예: '강원과 제주 전원율 비교')에는 반드시 query_data 함수를 호출해 "
-        "실제 데이터를 계산하고, 반환된 수치를 근거로 답한다. 절대 수치를 임의로 지어내지 말 것.\n"
+        "(3) 지역별 수치 비교·순위·통계 질문(예: '강원과 제주 전원율 비교', '5대 광역시 전원율 순위')에는 "
+        "반드시 query_data 함수를 호출해 실제 데이터를 계산하고, 반환된 수치를 근거로 답한다. "
+        "절대 수치를 임의로 지어내지 말 것.\n"
+        "(4) '월별/추세/추이' 질문(예: '서울지역 월별 전원율')은 query_data를 time='monthly'로 호출한다. "
+        "특정 지역에 한정된 월별 질문이면 groups에 그 지역(예: ['서울'])을 넣어 범위를 좁힌다.\n"
+        "(5) '5대광역시','수도권' 같은 묶음 표현은 query_data의 groups에 그대로 전달하면 자동 확장된다.\n"
         "절대 개인정보(환자 식별정보)를 추측하거나 생성하지 말 것. 집계 통계만 다룬다.\n\n"
         f"선택 가능한 병원 권역: {AI_FILTER_VOCAB['hosp_regions']}\n"
         f"선택 가능한 거주지 시도: {AI_FILTER_VOCAB['addr_regions']}\n"
@@ -2170,6 +2186,32 @@ QUERY_METRICS = {
     "avg_transfer_min": ("평균 전원시간", "분"),
 }
 
+# 지역 묶음 프리셋(자연어 묶음 표현 → 시도 short 목록). 공백 제거 후 매칭.
+REGION_GROUP_PRESETS = {
+    "5대광역시": ["부산", "대구", "인천", "광주", "대전"],
+    "6대광역시": ["부산", "대구", "인천", "광주", "대전", "울산"],
+    "광역시": ["부산", "대구", "인천", "광주", "대전", "울산"],
+    "수도권": ["서울", "인천", "경기"],
+}
+
+
+def _expand_group_presets(groups):
+    """groups 안의 묶음 표현('5대광역시' 등)을 실제 지역 목록으로 확장."""
+    out = []
+    for g in groups or []:
+        key = str(g).replace(" ", "").strip()
+        if key in REGION_GROUP_PRESETS:
+            out.extend(REGION_GROUP_PRESETS[key])
+        else:
+            out.append(g)
+    # 중복 제거(입력 순서 유지)
+    seen, uniq = set(), []
+    for g in out:
+        if g not in seen:
+            seen.add(g)
+            uniq.append(g)
+    return uniq
+
 
 def _region_stat_table(df_q, col, metric):
     """지역(col)별 지표 계산 -> DataFrame[name, value, n]."""
@@ -2213,14 +2255,41 @@ def _region_stat_table(df_q, col, metric):
     return out
 
 
+def _scope_to_groups(df_q, col, groups):
+    """groups(지역 목록)로 데이터 범위를 한정. groups 비면 원본 그대로."""
+    if not groups or col not in df_q.columns:
+        return df_q
+    norm = {_sido_short(g) for g in groups}
+    short = df_q[col].map(_sido_short)
+    mask = short.isin(norm) | df_q[col].isin(groups)
+    return df_q[mask]
+
+
+def _month_table(df_q, metric):
+    """F_CALL_D(YYYYMMDD) 기준 월별 지표 테이블. name='YYYY-MM'."""
+    datecol = "F_CALL_D" if "F_CALL_D" in df_q.columns else ("ER_D" if "ER_D" in df_q.columns else None)
+    if datecol is None:
+        return pd.DataFrame(columns=["name", "value", "n"])
+    ym = pd.to_numeric(df_q[datecol], errors="coerce") // 100  # YYYYMM
+    d = df_q.assign(_ym=ym)
+    d = d[d["_ym"].notna()].copy()
+    if len(d) == 0:
+        return pd.DataFrame(columns=["name", "value", "n"])
+    ys = d["_ym"].astype("int64").astype(str)
+    d["_ym"] = ys.str.slice(0, 4) + "-" + ys.str.slice(4, 6)  # 'YYYY-MM'
+    tbl = _region_stat_table(d, "_ym", metric)
+    return tbl.sort_values("name").reset_index(drop=True)  # 시간순 정렬
+
+
 def _run_data_query(df_q, args):
     """query_data 실행 -> (payload_for_llm, viz_dict|None)."""
     dim = args.get("dimension", "region")
     metric = args.get("metric", "transfer_rate")
     if metric not in QUERY_METRICS:
         metric = "transfer_rate"
-    chart = args.get("chart", "bar")
-    groups = args.get("groups") or []
+    time = args.get("time", "none")
+    groups = _expand_group_presets(args.get("groups") or [])
+    chart = args.get("chart") or ("line" if time == "monthly" else "bar")
     try:
         top_n = int(args.get("top_n", 10) or 10)
     except Exception:
@@ -2228,35 +2297,52 @@ def _run_data_query(df_q, args):
     col = COL_REGION_ADDR if dim == "addr" else COL_REGION_HOSP
     label, unit = QUERY_METRICS[metric]
     dim_label = "거주지 시도" if dim == "addr" else "병원 권역"
-
-    tbl = _region_stat_table(df_q, col, metric)
-    if len(tbl) == 0:
-        return {"ok": False, "message": "현재 필터 조건에서 계산할 데이터가 없습니다."}, None
-
-    if groups:
-        norm = {_sido_short(g) for g in groups}
-        tbl["_short"] = tbl["name"].map(_sido_short)
-        sel = tbl[tbl["_short"].isin(norm) | tbl["name"].isin(groups)]
-        if len(sel) == 0:
-            return ({"ok": False, "message": f"요청한 지역 {groups} 을(를) 데이터에서 찾지 못했습니다."}, None)
-        tbl = sel.sort_values("value", ascending=False).drop(columns=["_short"])
-    else:
-        tbl = tbl.sort_values("value", ascending=False).head(top_n)
-
-    tbl = tbl.reset_index(drop=True)
     nd = 0 if metric == "injury_count" else 1
+
+    if time == "monthly":
+        # 월별 추세: groups가 있으면 해당 지역으로 범위 한정 후 월별 집계
+        d = _scope_to_groups(df_q, col, groups)
+        if groups and len(d) == 0:
+            return ({"ok": False, "message": f"요청한 지역 {groups} 을(를) 데이터에서 찾지 못했습니다."}, None)
+        tbl = _month_table(d, metric)
+        if len(tbl) == 0:
+            return ({"ok": False, "message": "월별로 집계할 데이터가 없습니다(F_CALL_D 없음/필터 결과 없음)."}, None)
+        scope_label = ",".join(_sido_short(g) for g in groups) if groups else "전체"
+        x_title = "월"
+        title_txt = f"{scope_label} · 월별 {label}"
+    else:
+        # 지역별 집계(비교/순위)
+        tbl = _region_stat_table(df_q, col, metric)
+        if len(tbl) == 0:
+            return {"ok": False, "message": "현재 필터 조건에서 계산할 데이터가 없습니다."}, None
+        if groups:
+            norm = {_sido_short(g) for g in groups}
+            tbl["_short"] = tbl["name"].map(_sido_short)
+            sel = tbl[tbl["_short"].isin(norm) | tbl["name"].isin(groups)]
+            if len(sel) == 0:
+                return ({"ok": False, "message": f"요청한 지역 {groups} 을(를) 데이터에서 찾지 못했습니다."}, None)
+            tbl = sel.sort_values("value", ascending=False).drop(columns=["_short"])
+        else:
+            tbl = tbl.sort_values("value", ascending=False).head(top_n)
+        tbl = tbl.reset_index(drop=True)
+        scope_label = None
+        x_title = dim_label
+        title_txt = f"{label} 비교 · {dim_label}"
+
     tbl["value_r"] = tbl["value"].round(nd)
 
+    row_key = "월" if time == "monthly" else "지역"
     payload = {
-        "ok": True, "dimension": dim_label, "metric": label, "unit": unit,
-        "rows": [{"지역": r["name"], "값": (int(r["value_r"]) if nd == 0 else round(float(r["value_r"]), 1)),
+        "ok": True, "mode": ("monthly" if time == "monthly" else "region"),
+        "scope": scope_label, "dimension": dim_label, "metric": label, "unit": unit,
+        "rows": [{row_key: r["name"], "값": (int(r["value_r"]) if nd == 0 else round(float(r["value_r"]), 1)),
                   "환자수": int(r["n"])} for _, r in tbl.iterrows()],
     }
 
     if chart == "table":
         viz = {
             "type": "table",
-            "columns": [{"name": "지역", "id": "name"},
+            "columns": [{"name": x_title, "id": "name"},
                         {"name": f"{label}({unit})", "id": "value"},
                         {"name": "환자수(명)", "id": "n"}],
             "data": [{"name": r["name"],
@@ -2264,16 +2350,24 @@ def _run_data_query(df_q, args):
                       "n": int(r["n"])} for _, r in tbl.iterrows()],
         }
     else:
-        fig = go.Figure(go.Bar(
-            x=tbl["name"].tolist(), y=tbl["value_r"].tolist(),
-            marker_color=CLR["primary"],
-            text=[f"{v:,.0f}" if nd == 0 else f"{v:.1f}" for v in tbl["value_r"]],
-            textposition="outside", cliponaxis=False,
-        ))
+        if chart == "line":
+            fig = go.Figure(go.Scatter(
+                x=tbl["name"].tolist(), y=tbl["value_r"].tolist(),
+                mode="lines+markers", line=dict(color=CLR["primary"], width=2),
+                marker=dict(size=6),
+            ))
+        else:
+            fig = go.Figure(go.Bar(
+                x=tbl["name"].tolist(), y=tbl["value_r"].tolist(),
+                marker_color=CLR["primary"],
+                text=[f"{v:,.0f}" if nd == 0 else f"{v:.1f}" for v in tbl["value_r"]],
+                textposition="outside", cliponaxis=False,
+            ))
         fig.update_layout(
-            title=dict(text=f"{label} 비교 · {dim_label}", font=dict(size=13, color=CLR["navy"])),
+            title=dict(text=title_txt, font=dict(size=13, color=CLR["navy"])),
             margin=dict(l=10, r=10, t=38, b=28), height=270,
-            yaxis_title=f"{label}({unit})", paper_bgcolor="white", plot_bgcolor="white",
+            xaxis_title=x_title, yaxis_title=f"{label}({unit})",
+            paper_bgcolor="white", plot_bgcolor="white",
             font=dict(size=11), showlegend=False,
         )
         viz = {"type": "bar", "figure": json.loads(fig.to_json())}
@@ -3031,6 +3125,117 @@ SHOT_STYLE_BASE = {
 }
 SHOT_STYLE_HIDDEN = {**SHOT_STYLE_BASE, "display": "none"}
 SHOT_STYLE_VISIBLE = {**SHOT_STYLE_BASE, "display": "block"}
+
+
+# -----------------------------
+# 7-b) 전원환자 프로파일 테이블 (실제 데이터 기반)
+#   행 = 전원환자의 주요 유형(성별·연령대·사고장소·손상기전 조합)
+#   전원율 = 해당 조합의 전원환자수 / 해당 조합의 전체환자수 × 100
+# -----------------------------
+def _age_band(age):
+    a = pd.to_numeric(age, errors="coerce")
+    if pd.isna(a):
+        return "미상"
+    if a >= 80:
+        return "80대이상"
+    if a < 10:
+        return "10대미만"
+    return f"{int(a // 10 * 10)}대"
+
+
+def _profile_scope(df_f, scenario, selected):
+    """선택된 병원(H_CODE) 또는 권역으로 데이터 범위 한정. 미선택 시 전체."""
+    if not selected:
+        return df_f
+    sel = str(selected)
+    if scenario == "D" and COL_REGION_HOSP in df_f.columns:
+        sub = df_f[df_f[COL_REGION_HOSP].astype(str) == sel]
+        return sub if len(sub) else df_f
+    if "H_CODE" in df_f.columns:
+        sub = df_f[df_f["H_CODE"].astype(str) == sel]
+        if len(sub):
+            return sub
+    if COL_REGION_HOSP in df_f.columns:
+        sub = df_f[df_f[COL_REGION_HOSP].astype(str) == sel]
+        if len(sub):
+            return sub
+    return df_f
+
+
+def build_transfer_profile_rows(df_scope, top_n=5):
+    """전원환자 주요 유형 top_n → [순위, 성별, 연령대, 사고장소, 손상기전, 전원율] dict 목록."""
+    need = {"EMS_SN", "H2_CODE", "H_SEX", "H_AGE", "ACCI_PLACE", "MECH"}
+    if df_scope is None or len(df_scope) == 0 or not need.issubset(df_scope.columns):
+        return []
+    d = df_scope.drop_duplicates("EMS_SN").copy()
+    d["_sex"] = d["H_SEX"].map({1: "남", 2: "여", "1": "남", "2": "여"}).fillna("미상")
+    d["_age"] = d["H_AGE"].apply(_age_band)
+    d["_place"] = d["ACCI_PLACE"].fillna("미상").astype(str)
+    d["_mech"] = d["MECH"].fillna("미상").astype(str)
+    d["_tr"] = d["H2_CODE"].notna() & (d["H2_CODE"].astype(str).str.lower() != "nan")
+    keys = ["_sex", "_age", "_place", "_mech"]
+    g = d.groupby(keys).agg(total=("EMS_SN", "size"), tr=("_tr", "sum")).reset_index()
+    g = g[g["tr"] > 0].sort_values("tr", ascending=False).head(top_n)
+    if len(g) == 0:
+        return []
+    g["rate"] = g["tr"] / g["total"] * 100
+    rows = []
+    for i, (_, r) in enumerate(g.iterrows(), start=1):
+        rows.append({
+            "rank": i, "sex": r["_sex"], "age": r["_age"],
+            "place": r["_place"], "mech": r["_mech"],
+            "rate": f"{r['rate']:.1f}%",
+        })
+    return rows
+
+
+def render_profile_tbody(rows):
+    """프로파일 dict 목록 → html.Tr 목록 (기존 더미 테이블 스타일 유지)."""
+    td_style = {"padding": "5px 8px", "fontSize": "13px",
+                "color": COLOR["text_title"], "borderBottom": "1px solid #F0F4FF"}
+    if not rows:
+        return [html.Tr([html.Td("전원환자 데이터가 없습니다.", colSpan=6,
+                                 style={**td_style, "textAlign": "center",
+                                        "color": COLOR["text_muted"]})])]
+    out = []
+    for i, r in enumerate(rows):
+        cells = [r["rank"], r["sex"], r["age"], r["place"], r["mech"], r["rate"]]
+        out.append(html.Tr(
+            [html.Td(c, style=td_style) for c in cells],
+            style={"background": "#FFFFFF" if i % 2 == 0 else "#F8FAFC"},
+        ))
+    return out
+
+
+@app.callback(
+    Output("profile-table-body", "children"),
+    Input("filter_hosp_region", "value"),
+    Input("filter_addr_region", "value"),
+    Input("filter_classes", "value"),
+    Input("filter_icd_detail", "value"),
+    Input("filter_sex", "value"),
+    Input("filter_age", "value"),
+    Input("filter_iss", "value"),
+    Input("filter_iss_na", "value"),
+    Input("scenario", "value"),
+    Input("selected_store", "data"),
+)
+def update_profile_table(f_hosp_region, f_addr_region, f_classes, f_icd_detail,
+                         f_sex, f_age, f_iss, f_iss_na, scenario, selected):
+    try:
+        df_f = apply_filters(
+            df,
+            hosp_regions=f_hosp_region, addr_regions=f_addr_region,
+            classes_kor=f_classes, icd_st_detail=f_icd_detail, sex=f_sex,
+            age_range=f_age, iss_range=f_iss,
+            include_iss_na=("include" in (f_iss_na or [])),
+        )
+        scope = _profile_scope(df_f, scenario, selected)
+        rows = build_transfer_profile_rows(scope, top_n=5)
+        return render_profile_tbody(rows)
+    except Exception:
+        return render_profile_tbody([])
+
 
 # -----------------------------
 # 8) Callback
