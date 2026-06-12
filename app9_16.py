@@ -2066,11 +2066,47 @@ AI_TOOLS = [{
                     "enum": ["transfer_rate", "injury_count", "severe_rate", "elderly_rate", "avg_transfer_min"],
                     "description": "transfer_rate=전원율, injury_count=손상 환자수, severe_rate=중증손상률, elderly_rate=고령자손상률, avg_transfer_min=평균 전원시간(분)",
                 },
+                "age_min": {"type": "integer",
+                            "description": "특정 연령 이상만 집계(예: '65세 이상 전원율' → metric='transfer_rate', age_min=65)"},
+                "age_max": {"type": "integer", "description": "특정 연령 이하만 집계"},
+                "sex": {"type": "string", "enum": ["남", "여"],
+                        "description": "특정 성별만 집계(예: '남성 전원율' → sex='남')"},
                 "chart": {"type": "string", "enum": ["bar", "line", "table"],
                           "description": "bar=막대, line=선(월별 추세에 적합), table=표. 기본: 월별이면 line, 그 외 bar"},
                 "top_n": {"type": "integer", "description": "groups 미지정 시 상위 개수. 기본 10"},
+                "scope": {
+                    "type": "string", "enum": ["current_filter", "all"],
+                    "description": (
+                        "current_filter=현재 대시보드에 적용된 필터 기준으로 집계(기본), "
+                        "all=대시보드 필터를 무시하고 전체 데이터로 집계. "
+                        "지역 비교/순위 질문인데 현재 권역 필터가 단일 지역으로 좁혀져 있어 "
+                        "비교 대상이 부족하면 scope='all'을 사용한다."
+                    ),
+                },
             },
             "required": ["metric"],
+        },
+    },
+}, {
+    "type": "function",
+    "function": {
+        "name": "get_transfer_profile",
+        "description": (
+            "전원환자(다른 병원으로 전원된 환자)의 주요 특성 프로파일(성별·연령대·사고장소·손상기전 조합별 "
+            "전원율 상위 유형)을 표로 보여준다. '전원환자 프로파일', '~한 전원환자 특성/유형' 같은 질문에 사용한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "age_min": {"type": "integer", "description": "연령 하한(예: '60대 이상' → 60)"},
+                "age_max": {"type": "integer", "description": "연령 상한"},
+                "sex": {"type": "string", "enum": ["남", "여"], "description": "특정 성별로 한정"},
+                "top_n": {"type": "integer", "description": "표시할 상위 유형 개수. 기본 5"},
+                "scope": {
+                    "type": "string", "enum": ["current_filter", "all"],
+                    "description": "current_filter=현재 대시보드 필터 기준(기본), all=대시보드 필터 무시하고 전체 데이터",
+                },
+            },
         },
     },
 }]
@@ -2088,6 +2124,17 @@ def _ai_system_prompt(state_summary: str) -> str:
         "(4) '월별/추세/추이' 질문(예: '서울지역 월별 전원율')은 query_data를 time='monthly'로 호출한다. "
         "특정 지역에 한정된 월별 질문이면 groups에 그 지역(예: ['서울'])을 넣어 범위를 좁힌다.\n"
         "(5) '5대광역시','수도권' 같은 묶음 표현은 query_data의 groups에 그대로 전달하면 자동 확장된다.\n"
+        "(6) [현재 대시보드 상태 요약]의 '적용 권역 필터'는 query_data가 계산할 데이터의 범위일 뿐, "
+        "비교/순위 대상 지역 목록이 아니다. 지역 비교·순위 질문(예: '중증손상률 높은 권역', "
+        "'전원율 상위 지역')에 답할 때, 현재 필터가 단일 권역으로 좁혀져 있어 비교할 지역이 부족하다고 "
+        "판단되면 query_data를 scope='all'로 호출해 전체 데이터 기준으로 계산한다. "
+        "그 경우 '(전체 데이터 기준)'이라고 답변에 명시한다. 절대 '비교할 권역이 없다'고 거절하지 말고 "
+        "scope='all'로 다시 시도할 것.\n"
+        "(7) '65세 이상 전원율', '남성 30대 전원율'처럼 연령/성별 조건이 붙은 지표 질문은 "
+        "query_data의 metric(예: transfer_rate)에 age_min/age_max/sex 인자를 추가해 호출한다. "
+        "고령자손상률(elderly_rate)은 '65세 이상 환자 비율'이며 '65세 이상 전원율'과 다르므로 혼동하지 말 것.\n"
+        "(8) '전원환자 프로파일'(전원된 환자의 성별·연령대·사고장소·손상기전 조합별 전원율 상위 유형) "
+        "질문에는 get_transfer_profile 함수를 호출한다. 연령/성별 조건이 있으면 age_min/age_max/sex로 전달한다.\n"
         "절대 개인정보(환자 식별정보)를 추측하거나 생성하지 말 것. 집계 통계만 다룬다.\n\n"
         f"선택 가능한 병원 권역: {AI_FILTER_VOCAB['hosp_regions']}\n"
         f"선택 가능한 거주지 시도: {AI_FILTER_VOCAB['addr_regions']}\n"
@@ -2281,7 +2328,42 @@ def _month_table(df_q, metric):
     return tbl.sort_values("name").reset_index(drop=True)  # 시간순 정렬
 
 
-def _run_data_query(df_q, args):
+def _apply_age_sex(df_q, args):
+    """query_data/get_transfer_profile 공통: age_min/age_max/sex 인자로 데이터 추가 한정."""
+    d = df_q
+    amin = args.get("age_min")
+    amax = args.get("age_max")
+    if (amin is not None or amax is not None) and "H_AGE_NUM" in d.columns:
+        lo = float(amin) if amin is not None else -1e9
+        hi = float(amax) if amax is not None else 1e9
+        d = d[d["H_AGE_NUM"].notna() & (d["H_AGE_NUM"] >= lo) & (d["H_AGE_NUM"] <= hi)]
+    sex = args.get("sex")
+    if sex and "H_SEX" in d.columns:
+        code = {"남": "1", "여": "2"}.get(sex, sex)
+        d = d[d["H_SEX"].astype(str) == str(code)]
+    return d
+
+
+def _profile_args_to_filter_updates(args: dict) -> dict:
+    """get_transfer_profile의 age_min/age_max/sex -> 좌측 필터(filter_age/filter_sex) 업데이트.
+
+    필터를 함께 갱신하면 update_profile_table 콜백이 같은 조건으로 재계산되어
+    하단 '전원환자 프로파일' 카드도 채팅 결과와 일치하게 된다.
+    """
+    u = {}
+    amin = args.get("age_min")
+    amax = args.get("age_max")
+    if amin is not None or amax is not None:
+        u["filter_age"] = [int(amin) if amin is not None else 0, int(amax) if amax is not None else 100]
+    sex = args.get("sex")
+    if sex:
+        code = {"남": "1", "여": "2"}.get(sex, sex)
+        if code in AI_FILTER_VOCAB["sex"]:
+            u["filter_sex"] = [code]
+    return u
+
+
+def _run_data_query(df_q, args, df_all=None):
     """query_data 실행 -> (payload_for_llm, viz_dict|None)."""
     dim = args.get("dimension", "region")
     metric = args.get("metric", "transfer_rate")
@@ -2298,6 +2380,20 @@ def _run_data_query(df_q, args):
     label, unit = QUERY_METRICS[metric]
     dim_label = "거주지 시도" if dim == "addr" else "병원 권역"
     nd = 0 if metric == "injury_count" else 1
+
+    # scope='all'이면 대시보드 필터를 무시하고 전체 데이터를 사용 (지역 비교/순위가
+    # 현재 필터로 단일 지역만 남아 비교 불가능해지는 것을 방지)
+    if args.get("scope") == "all" and df_all is not None:
+        df_q = df_all
+
+    age_sex_note = []
+    if args.get("age_min") is not None or args.get("age_max") is not None:
+        age_sex_note.append(f"연령 {args.get('age_min', '')}~{args.get('age_max', '')}세")
+    if args.get("sex"):
+        age_sex_note.append(f"{args['sex']}성")
+    df_q = _apply_age_sex(df_q, args)
+    if age_sex_note and len(df_q) == 0:
+        return ({"ok": False, "message": f"조건({', '.join(age_sex_note)})에 해당하는 데이터가 없습니다."}, None)
 
     if time == "monthly":
         # 월별 추세: groups가 있으면 해당 지역으로 범위 한정 후 월별 집계
@@ -2375,6 +2471,53 @@ def _run_data_query(df_q, args):
     return payload, viz
 
 
+def _run_profile_query(df_q, args, df_all=None):
+    """get_transfer_profile 실행 -> (payload_for_llm, viz_dict|None).
+
+    대시보드의 '전원환자 프로파일' 카드(build_transfer_profile_rows)와 동일한 계산을
+    채팅에서 조건(연령/성별)을 받아 재사용한다.
+    """
+    if args.get("scope") == "all" and df_all is not None:
+        df_q = df_all
+
+    cond_note = []
+    if args.get("age_min") is not None or args.get("age_max") is not None:
+        cond_note.append(f"연령 {args.get('age_min', '')}~{args.get('age_max', '')}세")
+    if args.get("sex"):
+        cond_note.append(f"{args['sex']}성")
+    df_q = _apply_age_sex(df_q, args)
+    if len(df_q) == 0:
+        cond_txt = ", ".join(cond_note) if cond_note else "지정한 조건"
+        return ({"ok": False, "message": f"조건({cond_txt})에 해당하는 데이터가 없습니다."}, None)
+
+    try:
+        top_n = int(args.get("top_n", 5) or 5)
+    except Exception:
+        top_n = 5
+
+    rows = build_transfer_profile_rows(df_q, top_n=top_n)
+    if not rows:
+        cond_txt = ", ".join(cond_note) if cond_note else "지정한 조건"
+        return ({"ok": False, "message": f"조건({cond_txt})에서 전원환자 데이터를 찾을 수 없습니다."}, None)
+
+    cond_txt = ", ".join(cond_note) if cond_note else "전체"
+    payload = {
+        "ok": True, "scope": cond_txt,
+        "rows": [{"순위": r["rank"], "성별": r["sex"], "연령대": r["age"],
+                  "사고장소": r["place"], "손상기전": r["mech"], "전원율": r["rate"]}
+                 for r in rows],
+    }
+    viz = {
+        "type": "table",
+        "columns": [{"name": "순위", "id": "rank"}, {"name": "성별", "id": "sex"},
+                    {"name": "연령대", "id": "age"}, {"name": "사고장소", "id": "place"},
+                    {"name": "손상기전", "id": "mech"}, {"name": "전원율", "id": "rate"}],
+        "data": [{"rank": r["rank"], "sex": r["sex"], "age": r["age"],
+                  "place": r["place"], "mech": r["mech"], "rate": r["rate"]} for r in rows],
+    }
+    return payload, viz
+
+
 def ai_chat(history, user_msg, state_summary, df_q=None):
     """OpenAI 호출 -> (assistant_text, updates_dict, viz|None). 키 없거나 실패 시 graceful 메시지."""
     if not os.environ.get("OPENAI_API_KEY"):
@@ -2413,9 +2556,18 @@ def ai_chat(history, user_msg, state_summary, df_q=None):
                     tool_results.append({"role": "tool", "tool_call_id": tc.id,
                                          "content": "대시보드 필터를 적용했습니다."})
                 elif name == "query_data":
-                    payload, v = _run_data_query(df_q, a)
+                    payload, v = _run_data_query(df_q, a, df_all=df)
                     if v is not None:
                         viz = v
+                    did_query = True
+                    tool_results.append({"role": "tool", "tool_call_id": tc.id,
+                                         "content": json.dumps(payload, ensure_ascii=False)})
+                elif name == "get_transfer_profile":
+                    payload, v = _run_profile_query(df_q, a, df_all=df)
+                    if v is not None:
+                        viz = v
+                    if payload.get("ok"):
+                        updates.update(_profile_args_to_filter_updates(a))
                     did_query = True
                     tool_results.append({"role": "tool", "tool_call_id": tc.id,
                                          "content": json.dumps(payload, ensure_ascii=False)})
