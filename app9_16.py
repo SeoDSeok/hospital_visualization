@@ -1834,6 +1834,28 @@ def build_choro_legend_children(df_f, metric):
     ]
 
 
+def render_profile_table(rows):
+    """프로파일 dict 목록 → dash_table.DataTable (페이지네이션, 전체 행 조회 가능)."""
+    if not rows:
+        return html.Div("전원환자 데이터가 없습니다.", style={
+            "padding": "16px", "textAlign": "center", "fontSize": "13px",
+            "color": COLOR["text_muted"],
+        })
+    return dash_table.DataTable(
+        columns=[
+            {"name": "순위", "id": "rank"},
+            {"name": "성별", "id": "sex"},
+            {"name": "연령대", "id": "age"},
+            {"name": "사고장소", "id": "place"},
+            {"name": "손상기전", "id": "mech"},
+            {"name": "전원율", "id": "rate"},
+        ],
+        data=rows,
+        page_size=10,
+        **TABLE_KWARGS,
+    )
+
+
 # =========================================================
 # KPI cards + sparklines (PRD 필수기능 5)
 # =========================================================
@@ -2357,8 +2379,8 @@ def _profile_args_to_filter_updates(args: dict) -> dict:
         u["filter_age"] = [int(amin) if amin is not None else 0, int(amax) if amax is not None else 100]
     sex = args.get("sex")
     if sex:
-        code = {"남": "1", "여": "2"}.get(sex, sex)
-        if code in AI_FILTER_VOCAB["sex"]:
+        code = {"남": 1, "여": 2}.get(sex)
+        if code is not None:
             u["filter_sex"] = [code]
     return u
 
@@ -3120,33 +3142,13 @@ app.layout = html.Div(
                                                     style={"marginBottom": "8px", "paddingBottom": "8px",
                                                            "borderBottom": f"1px solid {COLOR['border']}"},
                                                 ),
-                                                html.Table([
-                                                    html.Thead(html.Tr([
-                                                        html.Th(col, style={
-                                                            "background": COLOR["blue_soft"], "padding": "5px 8px",
-                                                            "textAlign": "left", "fontSize": "11px",
-                                                            "fontWeight": "700", "color": COLOR["primary"],
-                                                            "borderBottom": f"1px solid {COLOR['border']}",
-                                                            "width": w,
-                                                        }) for col, w in zip(
-                                                            ["순위", "성별", "연령대", "사고장소", "손상기전", "전원율"],
-                                                            ["6%", "8%", "10%", "15%", "18%", "12%"],
-                                                        )
-                                                    ])),
-                                                    html.Tbody([
-                                                        html.Tr([
-                                                            html.Td(v, style={"padding": "5px 8px", "fontSize": "13px",
-                                                                              "color": COLOR["text_title"],
-                                                                              "borderBottom": "1px solid #F0F4FF"})
-                                                            for v in row
-                                                        ], style={"background": "#FFFFFF" if i % 2 == 0 else "#F8FAFC"})
-                                                        for i, row in enumerate([
-                                                            ["1", "남", "30대", "도로", "운수사고", "28.9%"],
-                                                            ["2", "남", "60대", "도로", "운수사고", "24.2%"],
-                                                            ["3", "남", "80대이상", "도로", "운수사고", "23.4%"],
-                                                        ])
-                                                    ], id="profile-table-body"),
-                                                ], style={"width": "100%", "borderCollapse": "collapse", "tableLayout": "fixed"}),
+                                                html.Div(id="profile-table-body", children=[
+                                                    render_profile_table([
+                                                        {"rank": 1, "sex": "남", "age": "30대", "place": "도로", "mech": "운수사고", "rate": "28.9%"},
+                                                        {"rank": 2, "sex": "남", "age": "60대", "place": "도로", "mech": "운수사고", "rate": "24.2%"},
+                                                        {"rank": 3, "sex": "남", "age": "80대이상", "place": "도로", "mech": "운수사고", "rate": "23.4%"},
+                                                    ]),
+                                                ]),
                                             ],
                                         ),
 
@@ -3314,8 +3316,11 @@ def _profile_scope(df_f, scenario, selected):
     return df_f
 
 
-def build_transfer_profile_rows(df_scope, top_n=5):
-    """전원환자 주요 유형 top_n → [순위, 성별, 연령대, 사고장소, 손상기전, 전원율] dict 목록."""
+def build_transfer_profile_rows(df_scope, top_n=None):
+    """전원환자 주요 유형(전원율 내림차순) → [순위, 성별, 연령대, 사고장소, 손상기전, 전원율] dict 목록.
+
+    top_n=None이면 해당 조건의 모든 유형을 반환한다.
+    """
     need = {"EMS_SN", "H2_CODE", "H_SEX", "H_AGE", "ACCI_PLACE", "MECH"}
     if df_scope is None or len(df_scope) == 0 or not need.issubset(df_scope.columns):
         return []
@@ -3327,10 +3332,13 @@ def build_transfer_profile_rows(df_scope, top_n=5):
     d["_tr"] = d["H2_CODE"].notna() & (d["H2_CODE"].astype(str).str.lower() != "nan")
     keys = ["_sex", "_age", "_place", "_mech"]
     g = d.groupby(keys).agg(total=("EMS_SN", "size"), tr=("_tr", "sum")).reset_index()
-    g = g[g["tr"] > 0].sort_values("tr", ascending=False).head(top_n)
+    g = g[g["tr"] > 0]
     if len(g) == 0:
         return []
     g["rate"] = g["tr"] / g["total"] * 100
+    g = g.sort_values("rate", ascending=False)
+    if top_n is not None:
+        g = g.head(top_n)
     rows = []
     for i, (_, r) in enumerate(g.iterrows(), start=1):
         rows.append({
@@ -3339,24 +3347,6 @@ def build_transfer_profile_rows(df_scope, top_n=5):
             "rate": f"{r['rate']:.1f}%",
         })
     return rows
-
-
-def render_profile_tbody(rows):
-    """프로파일 dict 목록 → html.Tr 목록 (기존 더미 테이블 스타일 유지)."""
-    td_style = {"padding": "5px 8px", "fontSize": "13px",
-                "color": COLOR["text_title"], "borderBottom": "1px solid #F0F4FF"}
-    if not rows:
-        return [html.Tr([html.Td("전원환자 데이터가 없습니다.", colSpan=6,
-                                 style={**td_style, "textAlign": "center",
-                                        "color": COLOR["text_muted"]})])]
-    out = []
-    for i, r in enumerate(rows):
-        cells = [r["rank"], r["sex"], r["age"], r["place"], r["mech"], r["rate"]]
-        out.append(html.Tr(
-            [html.Td(c, style=td_style) for c in cells],
-            style={"background": "#FFFFFF" if i % 2 == 0 else "#F8FAFC"},
-        ))
-    return out
 
 
 @app.callback(
@@ -3383,10 +3373,10 @@ def update_profile_table(f_hosp_region, f_addr_region, f_classes, f_icd_detail,
             include_iss_na=("include" in (f_iss_na or [])),
         )
         scope = _profile_scope(df_f, scenario, selected)
-        rows = build_transfer_profile_rows(scope, top_n=5)
-        return render_profile_tbody(rows)
+        rows = build_transfer_profile_rows(scope, top_n=None)
+        return [render_profile_table(rows)]
     except Exception:
-        return render_profile_tbody([])
+        return [render_profile_table([])]
 
 
 # -----------------------------
